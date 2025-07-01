@@ -7,7 +7,7 @@ import plotly.express as px
 def extract_sbi_pdf(file):
     transactions = []
 
-    with pdfplumber.open(file) as pdf:
+    with pdfplumber.open(file,password=password) as pdf:
         for page in pdf.pages:
             tables = page.extract_tables()
             for table in tables:
@@ -58,6 +58,7 @@ file = st.file_uploader("Upload SBI PDF or CSV", type=["pdf", "csv"])
 
 if file is not None:
     if file.name.endswith(".pdf"):
+        password = st.text_input("🔐 Enter PDF password (if required)", type="password")
         try:
             df = extract_sbi_pdf(file)
             st.success("✅ PDF parsed successfully!")
