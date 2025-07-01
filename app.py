@@ -2,31 +2,33 @@ import streamlit as st
 import pandas as pd
 import pdfplumber
 import plotly.express as px
+st.set_page_config(page_title="📊 Finance Manager", layout="wide")
+st.title("📄 Personal Finance Manager")
+tab1,tab2,tab3=st.tabs(['SBI','HDFC',"ICICI"])
+with tab1:
+    def extract_sbi_pdf(file):
+        transactions = []
+
+        with pdfplumber.open(file,password=password) as pdf:
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        if row and len(row) >= 5:
+                            transactions.append(row)
+
+            df = pd.DataFrame(transactions)
+            df = df.dropna(how='all')
 
 
-def extract_sbi_pdf(file):
-    transactions = []
-
-    with pdfplumber.open(file,password=password) as pdf:
-        for page in pdf.pages:
-            tables = page.extract_tables()
-            for table in tables:
-                for row in table:
-                    if row and len(row) >= 5:
-                        transactions.append(row)
-
-    df = pd.DataFrame(transactions)
-    df = df.dropna(how='all')
-
-
-    df.columns = df.iloc[0]
-    df = df[1:]
+            df.columns = df.iloc[0]
+            df = df[1:]
 
     # Clean column names
-    df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+            df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
 
     # Rename to standard names
-    rename_map = {
+            rename_map = {
         'txn_date': 'Txn Date',
         'date': 'Txn Date',
         'description': 'Description',
@@ -34,24 +36,22 @@ def extract_sbi_pdf(file):
         'credit': 'Credit',
         'balance': 'Balance'
     }
-    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+            df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
 
-    for col in ['Debit', 'Credit', 'Balance']:
-        if col in df.columns:
-            df[col] = (
-                df[col].astype(str)
-                .str.replace(",", "")
-                .str.replace("DR", "", case=False)
-                .str.replace("CR", "", case=False)
-                .str.extract(r"([\d.]+)")
-                .astype(float)
-            )
+        for col in ['Debit', 'Credit', 'Balance']:
+            if col in df.columns:
+                df[col] = (
+                    df[col].astype(str)
+                    .str.replace(",", "")
+                    .str.replace("DR", "", case=False)
+                    .str.replace("CR", "", case=False)
+                    .str.extract(r"([\d.]+)")
+                    .astype(float)
+                )
 
-    return df
+        return df
+    
 
-
-st.set_page_config(page_title="📊 Finance Manager", layout="wide")
-st.title("📄 Personal Finance Manager")
 st.markdown("Upload your **SBI Bank PDF statement** or **CSV file** to analyze your transactions.")
 
 file = st.file_uploader("Upload SBI PDF or CSV", type=["pdf", "csv"])
@@ -120,8 +120,30 @@ if file is not None:
     # ---- Filterable Table ----
     st.markdown("### 🔍 Filtered Transactions")
     search = st.text_input("Search Description", "")
-    filtered_df = df[df["Description"].str.contains(search, case=False, na=False)] if search else df
+    filtered_df = df[df["details"].str.contains(search, case=False, na=False)] if search else df
     st.dataframe(filtered_df, use_container_width=True)
+    total_credit = filtered_df['Credit'].sum()
+    total_debit = filtered_df['Debit'].sum()
+    if search != "":
+        st.metric(f"Total Credit from '{search}'", f"₹ {total_credit:,.2f}")
+        st.metric(f"Total Debit to '{search}'", f"₹ {total_debit:,.2f}")
+        monthly_summary = filtered_df.groupby(['Year', 'Month'])[['Debit', 'Credit']].sum().reset_index()
+
+    # Melt the dataframe to long format for grouped bar plot
+        monthly_summary_melted = monthly_summary.melt(id_vars=["Year", "Month"], value_vars=["Debit", "Credit"], 
+                                                  var_name="Type", value_name="Amount")
+
+    # Plot
+        fig2 = px.bar(
+            monthly_summary_melted,
+            x="Month",
+            y="Amount",
+            color="Type",
+            barmode="group",
+            title=f"Monthly Debit vs Credit for '{search}'",
+            facet_col="Year"
+            )
+        st.plotly_chart(fig2, use_container_width=True)
 
     # ---- CSV Download ----
     st.download_button("📥 Download Cleaned CSV", data=filtered_df.to_csv(index=False), file_name="cleaned_transactions.csv", mime="text/csv")
